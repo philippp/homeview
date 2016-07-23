@@ -1,0 +1,13 @@
+<title>Welcome Home</title>
+<h1>Welcome Home</h1>
+<ul>
+  {% for machine in machines %}
+  <li>{{ machine.ip }} {{machine.hostname}}</li>
+  {% endfor %}
+</ul>  
+<a href='/captures/latest/network.html'>network summary</a>
+<center>
+<img src='/captures/latest/video1.jpeg'/>
+<br/>
+<img src='/captures/latest/video0.jpeg'/>
+</center>
