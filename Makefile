@@ -9,10 +9,10 @@ all: find_most_distinct
 debug: CFLAGS += -DDEBUG -g
 debug: find_most_distinct
 
-find_most_distinct.o: find_most_distinct.cpp
+opencv/find_most_distinct.o: opencv/find_most_distinct.cpp
 	$(CC) $(CFLAGS) -o $@ -c $^
 
-find_most_distinct: find_most_distinct.o
+find_most_distinct: opencv/find_most_distinct.o
 	$(LINK) -o $@ $^ $(LFLAGS)
 
 clean:

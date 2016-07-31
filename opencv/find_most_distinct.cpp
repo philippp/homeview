@@ -1,6 +1,7 @@
 #include <set>
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <stdio.h>
 #include "opencv2/core.hpp"
 #include "opencv2/core/utility.hpp"
@@ -12,8 +13,17 @@
 #include "opencv2/imgproc.hpp"
 #include "opencv2/xfeatures2d.hpp"
 
+using namespace std;
 using namespace cv;
 using namespace cv::xfeatures2d;
+
+void split(const string &s, char delim, vector<string> &elems) {
+  stringstream ss(s);
+  string item;
+  while (getline(ss, item, delim)) {
+    elems.push_back(item);
+  }
+}
 
 struct SURFDetector
 {
@@ -75,6 +85,70 @@ static void ImageDifferences(const Mat& img1,
   }
 }
 
+static string GetParentDirName(const string& filename) {
+  vector<string> file_tokens;
+  split(filename, '/', file_tokens);
+  if (file_tokens.size() > 1) {
+    return file_tokens[file_tokens.size() - 2];
+  }
+  return "";
+}
+
+static void ProcessImageDiff(const string& img_file_1,
+			     const string& img_file_2,
+			     const string& diff_output_dir,
+			     std::ofstream& manifest) {
+
+  UMat img1, img2;
+  imread(img_file_1, IMREAD_GRAYSCALE).copyTo(img1);
+  if(img1.empty()) {
+    std::cout << "Couldn't load " << img_file_1 << std::endl;
+    return;
+  }
+  
+  imread(img_file_2, IMREAD_GRAYSCALE).copyTo(img2);
+  if(img2.empty()) {
+    std::cout << "Couldn't load " << img_file_2 << std::endl;
+    return;
+  }
+  const string img_id_1 = GetParentDirName(img_file_1);
+  const string img_id_2 = GetParentDirName(img_file_2);
+  const string output_file = diff_output_dir + "/" + img_id_1 + "_" + img_id_2 + ".jpeg";
+
+  Mat output_image1;
+  Mat output_image2;
+  {	
+    std::vector<KeyPoint> unmatched_keypoints;
+    ImageDifferences(img1.getMat(ACCESS_READ),
+		     img2.getMat(ACCESS_READ),
+		     unmatched_keypoints);
+    
+    drawKeypoints(img2, unmatched_keypoints, output_image1,
+		  Scalar(0,0,255), DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
+    manifest << "diff," << img_id_1 << "," << img_id_2 <<
+      "," << unmatched_keypoints.size() << "," << output_file << "\n";
+  }
+  {
+    std::vector<KeyPoint> unmatched_keypoints;
+    ImageDifferences(img2.getMat(ACCESS_READ),
+		     img1.getMat(ACCESS_READ),
+		     unmatched_keypoints);
+    drawKeypoints(img1, unmatched_keypoints, output_image2,
+		  Scalar(0,0,255), DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
+    manifest << "diff," << img_id_2 << "," << img_id_1 << ","
+	     << unmatched_keypoints.size() << "," << output_file << "\n";
+  }
+  Size sz1 = output_image1.size();
+  Size sz2 = output_image2.size();
+  Mat im3(sz1.height, sz1.width+sz2.width, CV_8UC3);
+  Mat left(im3, Rect(0, 0, sz1.width, sz1.height));
+  output_image1.copyTo(left);
+  Mat right(im3, Rect(sz1.width, 0, sz2.width, sz2.height));
+  output_image2.copyTo(right);
+  imwrite(diff_output_dir + "/" + img_id_1 + "_" + img_id_2 + ".jpeg", im3);
+  manifest.flush();
+}
+
 ////////////////////////////////////////////////////
 // This program demonstrates the usage of SURF_OCL.
 // use cpu findHomography interface to calculate the transformation matrix
@@ -82,12 +156,7 @@ int main(int argc, char* argv[])
 {
     const char* keys =
       "{ h help     | false            | print help message  }"
-      "{ l left     | box.png          | specify left image  }"
-      "{ r right    | box_in_scene.png | specify right image }"
-      "{ o output   | SURF_output.jpg  | specify comparison output file }"
-      "{ t text     | manifest.txt     | specify manifest of comparisons }"
-      "{ m cpu_mode | false            | run without OpenCL }";
-   
+      "{ o output   | ./               | specify comparison output path }";
 
     CommandLineParser cmd(argc, argv, keys);
     if (cmd.get<bool>("help"))
@@ -97,61 +166,25 @@ int main(int argc, char* argv[])
         cmd.printMessage();
         return EXIT_SUCCESS;
     }
-    if (cmd.has("cpu_mode"))
-    {
-        ocl::setUseOpenCL(false);
-        std::cout << "OpenCL was disabled" << std::endl;
-    }
+    string outpath = cmd.get<string>("o");
+    std::ofstream manifest_file(outpath + "/manifest.csv", std::ofstream::out);
 
-    UMat img1, img2;
-
-    std::string outpath_image = cmd.get<std::string>("o");
-    std::string outpath_manifest = cmd.get<std::string>("t");
-    std::ofstream manifestFile(outpath_manifest, std::ofstream::out | std::ofstream::app);
-      
-    std::string fileName1 = cmd.get<std::string>("l");
-    imread(fileName1, IMREAD_GRAYSCALE).copyTo(img1);
-    if(img1.empty())
-    {
-        std::cout << "Couldn't load " << fileName1 << std::endl;
-        cmd.printMessage();
-        return EXIT_FAILURE;
+    string image_files_str;
+    string line;
+    while (std::getline(std::cin, line)) {
+	image_files_str += (line + " ");
     }
-
-    std::string fileName2 = cmd.get<std::string>("r");
-    imread(fileName2, IMREAD_GRAYSCALE).copyTo(img2);
-    if(img2.empty())
-    {
-        std::cout << "Couldn't load " << fileName2 << std::endl;
-        cmd.printMessage();
-        return EXIT_FAILURE;
+    vector<string> image_files;
+    split(image_files_str, ' ', image_files);
+    string last_image_file = "";
+    for (const string& image_file : image_files) {
+      if (last_image_file.empty()) {
+	last_image_file = image_file;
+	continue;
+      }
+      ProcessImageDiff(last_image_file, image_file, outpath, manifest_file);
+      cout << "Diffed " << last_image_file << " " << image_file << "\n";
+      last_image_file = image_file;
     }
-    Mat output_image1;
-    Mat output_image2;
-    {	
-      std::vector<KeyPoint> unmatched_keypoints;
-      ImageDifferences(img1.getMat(ACCESS_READ),
-		       img2.getMat(ACCESS_READ),
-		       unmatched_keypoints);
-      
-      drawKeypoints(img2, unmatched_keypoints, output_image1, Scalar(0,0,255), DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
-      manifestFile << "unmatched(" << fileName1 << ":" << fileName2 << ")=" << unmatched_keypoints.size() << "\n";
-    }
-    {
-      std::vector<KeyPoint> unmatched_keypoints;
-      ImageDifferences(img2.getMat(ACCESS_READ),
-		       img1.getMat(ACCESS_READ),
-		       unmatched_keypoints);
-      drawKeypoints(img1, unmatched_keypoints, output_image2, Scalar(0,0,255), DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
-      manifestFile << "unmatched(" << fileName2 << ":" << fileName1 << ")=" << unmatched_keypoints.size() << "\n";
-    }
-    Size sz1 = output_image1.size();
-    Size sz2 = output_image2.size();
-    Mat im3(sz1.height, sz1.width+sz2.width, CV_8UC3);
-    Mat left(im3, Rect(0, 0, sz1.width, sz1.height));
-    output_image1.copyTo(left);
-    Mat right(im3, Rect(sz1.width, 0, sz2.width, sz2.height));
-    output_image2.copyTo(right);
-    imwrite(outpath_image, im3);
     return EXIT_SUCCESS;
 }
