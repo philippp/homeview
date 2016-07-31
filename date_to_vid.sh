@@ -1,4 +1,4 @@
-directory_list=`ls captures/2016/07/20/*/video0.jpeg | sed -e "s/video0.jpeg//"`
+directory_list=`ls captures/$1/*/video0.jpeg | sed -e "s/video0.jpeg//"`
 mkdir scratch
 i=0
 for directory in $directory_list

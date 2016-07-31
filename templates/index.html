@@ -1,13 +1,28 @@
 <title>Welcome Home</title>
 <h1>Welcome Home</h1>
-<ul>
+<table>
   {% for machine in machines %}
-  <li>{{ machine.ip }} {{machine.hostname}}</li>
+  <tr>
+    <td>{{machine.ip}}</td>
+    <td>{{machine.mac}}</td>
+    <td>{{machine.vendor}}</td>
+    <td>{{machine.hostname}}</td>
+  </tr>
   {% endfor %}
-</ul>  
-<a href='/captures/latest/network.html'>network summary</a>
+</table>  
+
+<a href='/captures/{{datestamp}}/network.html'>network summary</a>
+
 <center>
-<img src='/captures/latest/video1.jpeg'/>
-<br/>
-<img src='/captures/latest/video0.jpeg'/>
+<img src='/captures/{{datestamp}}/video1.jpeg'/>
+<img src='/captures/{{datestamp}}/video0.jpeg'/>
 </center>
+
+{% for ds in listed_datestamps %}
+<a href="?datestamp={{ds}}">{{ds}}</a>
+{% endfor %}
+
+<div class="footer">
+  <a href="https://garage:8443/">unifi controller</a>
+  <a href="http://garage:9001/">supervisord</a>
+</div>
