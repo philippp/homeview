@@ -145,8 +145,53 @@ static void ProcessImageDiff(const string& img_file_1,
   output_image1.copyTo(left);
   Mat right(im3, Rect(sz1.width, 0, sz2.width, sz2.height));
   output_image2.copyTo(right);
-  imwrite(diff_output_dir + "/" + img_id_1 + "_" + img_id_2 + ".jpeg", im3);
+  imwrite(output_file, im3); //diff_output_dir + "/" + img_id_1 + "_" + img_id_2 + ".jpeg", im3);
   manifest.flush();
+}
+
+static void ProcessImageDiff2(const string& img_file_1,
+			      const string& img_file_2,
+			      const string& diff_output_dir,
+			      std::ofstream& manifest) {			      
+  UMat img1, img2;
+  imread(img_file_1, IMREAD_COLOR).copyTo(img1);
+  if(img1.empty()) {
+    std::cout << "Couldn't load " << img_file_1 << std::endl;
+    return;
+  }
+  
+  imread(img_file_2, IMREAD_COLOR).copyTo(img2);
+  if(img2.empty()) {
+    std::cout << "Couldn't load " << img_file_2 << std::endl;
+    return;
+  }
+
+  const string img_id_1 = GetParentDirName(img_file_1);
+  const string img_id_2 = GetParentDirName(img_file_2);
+  const string output_file = diff_output_dir + "/" + img_id_1 + "_" + img_id_2 + ".jpeg";  
+  cv::Mat diffImage;
+  cv::absdiff(img1, img2, diffImage);
+  cv::Mat foregroundMask = cv::Mat::zeros(diffImage.rows, diffImage.cols, CV_8UC1);
+
+  float threshold = 80.0f;
+  float dist;
+  float dist_sum = 0;
+  for(int j=0; j<diffImage.rows; ++j) {
+    for(int i=0; i<diffImage.cols; ++i) {
+      cv::Vec3b pix = diffImage.at<cv::Vec3b>(j,i);
+
+      dist = (pix[0]*pix[0] + pix[1]*pix[1] + pix[2]*pix[2]);
+      dist = sqrt(dist);
+      
+      if(dist>threshold) {
+	dist_sum += dist;
+	foregroundMask.at<unsigned char>(j,i) = 255;
+      }
+    }
+  }
+  manifest << "mask," << img_file_1 << "," << img_file_2 << ","
+	   << dist_sum << "," << output_file << "\n";
+  imwrite(output_file, foregroundMask);
 }
 
 ////////////////////////////////////////////////////
@@ -182,7 +227,7 @@ int main(int argc, char* argv[])
 	last_image_file = image_file;
 	continue;
       }
-      ProcessImageDiff(last_image_file, image_file, outpath, manifest_file);
+      ProcessImageDiff2(last_image_file, image_file, outpath, manifest_file);
       cout << "Diffed " << last_image_file << " " << image_file << "\n";
       last_image_file = image_file;
     }
