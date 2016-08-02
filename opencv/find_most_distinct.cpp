@@ -176,22 +176,31 @@ static void ProcessImageDiff2(const string& img_file_1,
   float threshold = 80.0f;
   float dist;
   float dist_sum = 0;
+  float max_dist = 0;
+  
+  cv::Mat rss_distance = cv::Mat(diffImage.rows, diffImage.cols, CV_64F);
   for(int j=0; j<diffImage.rows; ++j) {
     for(int i=0; i<diffImage.cols; ++i) {
       cv::Vec3b pix = diffImage.at<cv::Vec3b>(j,i);
-
-      dist = (pix[0]*pix[0] + pix[1]*pix[1] + pix[2]*pix[2]);
-      dist = sqrt(dist);
-      
-      if(dist>threshold) {
-	dist_sum += dist;
-	foregroundMask.at<unsigned char>(j,i) = 255;
+      dist = sqrt((pix[0]*pix[0] + pix[1]*pix[1] + pix[2]*pix[2]));
+      if (max_dist < dist) {
+	max_dist = dist;
       }
+      dist_sum += dist;
+      rss_distance.at<float>(j,i) = dist;
+    }
+  }
+  for (int j=0; j<rss_distance.rows; ++j) {
+    for (int i=0; i<rss_distance.cols; ++i) {
+      dist = rss_distance.at<float>(j,i);
+      foregroundMask.at<unsigned char>(j,i) = 255 * (dist/max_dist);
     }
   }
   manifest << "mask," << img_file_1 << "," << img_file_2 << ","
 	   << dist_sum << "," << output_file << "\n";
-  imwrite(output_file, foregroundMask);
+  Mat im_color;
+  applyColorMap(foregroundMask, im_color, COLORMAP_JET);
+  imwrite(output_file, im_color);
 }
 
 ////////////////////////////////////////////////////
