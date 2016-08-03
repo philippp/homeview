@@ -1,11 +1,13 @@
 #!/usr/bin/env python
 import os
+import os.path
 import flask
 import pprint
 import xmltodict
 import pdb
 import collections
 import datetime
+import csv
 
 application = flask.Flask(__name__)
 
@@ -61,6 +63,34 @@ def hello():
                                  machines=get_network_summary(datestamp),
                                  datestamp=datestamp,
                                  listed_datestamps=listed_datestamps)
+
+
+@application.route("/analysis/<year>/<month>/<day>", defaults={'prefix_filter': ""})
+@application.route("/analysis/<year>/<month>/<day>/<prefix_filter>")
+def analysis(year, month, day, prefix_filter):
+    filename = "captures/%s/%s/%s/analysis" % (year, month, day)
+    if len(prefix_filter):
+        filename += "_%s" % (prefix_filter)
+    filename += "/sequence_metadata.csv"
+    sequence = list()
+    if not os.path.isfile(filename):
+        return "File not found"
+    
+    with open(filename, 'rb') as csvfile:
+        reader = csv.reader(csvfile)
+        for row in reader:
+            # mask,captures/2016/08/01/235900/video0.jpeg,captures/2016/08/01/235930/video0.jpeg,19.6643,captures/2016/08/01/analysis/235900_235930.jpeg
+            sequence.append(dict(
+                label=row[0],
+                img1=row[1],
+                img2=row[2],
+                score=row[3],
+                img_diff=row[4]
+            ))
+    ranked_sequence = sorted(sequence, key=lambda d: float(d['score']))[::-1]
+    ranked_sequence = ranked_sequence[:40]
+    return flask.render_template('analysis.html',
+                                 ranked_sequence=ranked_sequence)
 
 
 if __name__ == "__main__":
