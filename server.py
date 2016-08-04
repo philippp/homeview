@@ -80,13 +80,14 @@ def analysis(year, month, day, prefix_filter):
         reader = csv.reader(csvfile)
         for row in reader:
             # mask,captures/2016/08/01/235900/video0.jpeg,captures/2016/08/01/235930/video0.jpeg,19.6643,captures/2016/08/01/analysis/235900_235930.jpeg
-            sequence.append(dict(
-                label=row[0],
-                img1=row[1],
-                img2=row[2],
-                score=row[3],
-                img_diff=row[4]
-            ))
+            if len(row) > 4:
+                sequence.append(dict(
+                    label=row[0],
+                    img1=row[1],
+                    img2=row[2],
+                    score=row[3],
+                    img_diff=row[4]
+                ))
     ranked_sequence = sorted(sequence, key=lambda d: float(d['score']))[::-1]
     ranked_sequence = ranked_sequence[:40]
     return flask.render_template('analysis.html',
