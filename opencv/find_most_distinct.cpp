@@ -1,21 +1,13 @@
-#include <set>
 #include <iostream>
 #include <fstream>
-#include <sstream>
 #include <stdio.h>
 #include "opencv2/core.hpp"
 #include "opencv2/core/utility.hpp"
-#include "opencv2/core/ocl.hpp"
 #include "opencv2/imgcodecs.hpp"
-#include "opencv2/highgui.hpp"
-#include "opencv2/features2d.hpp"
-#include "opencv2/calib3d.hpp"
 #include "opencv2/imgproc.hpp"
-#include "opencv2/xfeatures2d.hpp"
 
 using namespace std;
 using namespace cv;
-using namespace cv::xfeatures2d;
 
 void split(const string &s, char delim, vector<string> &elems) {
   stringstream ss(s);
@@ -25,31 +17,6 @@ void split(const string &s, char delim, vector<string> &elems) {
   }
 }
 
-struct SURFDetector
-{
-    Ptr<Feature2D> surf;
-    SURFDetector(double hessian = 800.0)
-    {
-        surf = SURF::create(hessian);
-    }
-    template<class T>
-    void operator()(const T& in, const T& mask, std::vector<cv::KeyPoint>& pts, T& descriptors, bool useProvided = false)
-    {
-        surf->detectAndCompute(in, mask, pts, descriptors, useProvided);
-    }
-};
-
-template<class KPMatcher>
-struct SURFMatcher
-{
-    KPMatcher matcher;
-    template<class T>
-    void match(const T& in1, const T& in2, std::vector<cv::DMatch>& matches)
-    {
-        matcher.match(in1, in2, matches);
-    }
-};
-
 static string GetParentDirName(const string& filename) {
   vector<string> file_tokens;
   split(filename, '/', file_tokens);
@@ -57,6 +24,38 @@ static string GetParentDirName(const string& filename) {
     return file_tokens[file_tokens.size() - 2];
   }
   return "";
+}
+
+/**
+ * Given a map of RGB difference values, calculate the corresponding map of
+ * RSS edit distance (i.e. sqrt(dR^2+dG^2+dR^2)) as well as some statistics
+ * about the image difference.
+ */
+static void CalcRSSDistance(const cv::Mat& diffImage,
+			    cv::Mat* rss_distance_matrix,
+			    float* max_rss_distance,
+			    float* sum_rss_distance,
+			    float* variance) {
+  float rss_distance;
+  int n = 0;
+  float mean = 0;
+  float m2 = 0;  
+  for(int j=0; j<diffImage.rows; ++j) {
+    for(int i=0; i<diffImage.cols; ++i) {
+      n += 1;
+      cv::Vec3b pix = diffImage.at<cv::Vec3b>(j,i);
+      rss_distance = sqrt((pix[0]*pix[0] + pix[1]*pix[1] + pix[2]*pix[2]));
+      float delta = rss_distance - mean;
+      mean += delta / n;
+      m2 += delta * (rss_distance - mean);
+      if (*max_rss_distance < rss_distance) {
+	*max_rss_distance = rss_distance;
+      }
+      rss_distance_matrix->at<float>(j,i) = rss_distance;
+      *sum_rss_distance += rss_distance;
+    }
+  }
+  *variance = m2 / (n - 1);
 }
 
 static void ProcessImageDiff2(const string& img_file_1,
@@ -88,64 +87,51 @@ static void ProcessImageDiff2(const string& img_file_1,
   const string output_file = diff_output_dir + "/" + img_id_1 + "_" + img_id_2 + ".jpeg";  
   cv::Mat diffImage;
   cv::absdiff(img1, img2, diffImage);
-  cv::Mat foregroundMask = cv::Mat::zeros(diffImage.rows, diffImage.cols, CV_8UC1);
 
-  float rss_distance;
+  float sum_rss_distance = 0;
   float max_rss_distance = 0;  // Used for scaling colormap values.
-
-  int n = 0;
-  float mean = 0;
-  float m2 = 0;
-  
+  float variance;
   cv::Mat rss_distance_matrix = cv::Mat(diffImage.rows, diffImage.cols, CV_64F);
-  for(int j=0; j<diffImage.rows; ++j) {
-    for(int i=0; i<diffImage.cols; ++i) {
-      n += 1;
-      cv::Vec3b pix = diffImage.at<cv::Vec3b>(j,i);
-      rss_distance = sqrt((pix[0]*pix[0] + pix[1]*pix[1] + pix[2]*pix[2]));
-      float delta = rss_distance - mean;
-      mean += delta / n;
-      m2 += delta * (rss_distance - mean);
-      if (max_rss_distance < rss_distance) {
-	max_rss_distance = rss_distance;
-      }
-      rss_distance_matrix.at<float>(j,i) = rss_distance;
-    }
-  }
-
-  float variance = m2 / (n - 1);
+  CalcRSSDistance(diffImage,
+		  &rss_distance_matrix,
+		  &max_rss_distance,
+		  &sum_rss_distance,
+		  &variance);
+  
   float std_dev = sqrt(variance);
   cv::Point top_left;
   cv::Point bottom_right;
+  cv::Mat foregroundMask = cv::Mat::zeros(diffImage.rows, diffImage.cols, CV_8UC1);
+  float rss_distance_sum_in_rectangle = 0;
+  float rss_distance;
   for (int j=0; j<rss_distance_matrix.rows; ++j) {
     for (int i=0; i<rss_distance_matrix.cols; ++i) {
       rss_distance = rss_distance_matrix.at<float>(j,i);
-      if (rss_distance > 2.5 * std_dev) {
-	cout << "i=" << i << ",j=" << j << ",stddevs=" << rss_distance/std_dev << "\n";
+      if (rss_distance > 3 * std_dev) {
 	// The far sides of the frame keep moving as long as we're in an interesting area.
-	if (bottom_right.x < j) {
-	  cout << "  adjusting bottom_right.x from " << bottom_right.x << " to " << j << "\n";
-	  bottom_right.x = j;
+	if (bottom_right.y < j) {
+	  bottom_right.y = j;
 	}
-	if (bottom_right.y < i) {
-	  cout << "  adjusting bottom_right.y from " << bottom_right.y << " to " << i << "\n";
-	  bottom_right.y = i;
+	if (bottom_right.x < i) {
+	  bottom_right.x = i;
 	}
-	if (top_left.x == 0 || j < top_left.x) {
-	  cout << "  adjusting top_left.x from " << top_left.x << " to " << j << "\n";
-	  top_left.x = j;
+	if (top_left.y == 0 || j < top_left.y) {
+	  top_left.y = j;
 	}
-	if (top_left.y == 0 || i < top_left.y) {
-	  cout << "  adjusting top_left.y from " << top_left.y << "  to " << i << "\n";
-	  top_left.y = i;
+	if (top_left.x == 0 || i < top_left.x) {
+	  top_left.x = i;
+	}
+	if (top_left.x <= i && top_left.y <= j && bottom_right.x >= i && bottom_right.y >= j) {
+	  rss_distance_sum_in_rectangle += rss_distance;
 	}
       }
       foregroundMask.at<unsigned char>(j,i) = 255 * (rss_distance/max_rss_distance);
     }
   }
-  cout << "Final top_left.x=" << top_left.x << " top_left.y=" << top_left.y << " bottom_right.x=" << bottom_right.x << " bottom_right.y=" << bottom_right.y << "\n";
-  manifest << "mask," << img_file_1 << "," << img_file_2 << ","
-	   << variance << "," << output_file << "\n";
+  manifest << "images," << img_file_1 << "," << img_file_2 << "," << output_file << "," << rss_distance_matrix.rows << "," << rss_distance_matrix.cols << "\n";
+  manifest << "diff," << variance << "," << sum_rss_distance << "," << rss_distance_sum_in_rectangle << "\n";
+  manifest << "rectangle," << top_left.x << "," << top_left.y << "," << bottom_right.x << "," <<  bottom_right.y << "\n";
+
   Mat im_color;
   applyColorMap(foregroundMask, im_color, COLORMAP_JET);
   rectangle(im_color, top_left, bottom_right, Scalar(0,0,255), 1);

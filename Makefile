@@ -9,11 +9,15 @@ all: find_most_distinct
 debug: CFLAGS += -DDEBUG -g
 debug: find_most_distinct
 
+protos_middleman: opencv/transition_features.proto
+	protoc --cpp_out=opencv/ --python_out=opencv/ opencv/transition_features.proto
+	@touch protos_middleman
 opencv/find_most_distinct.o: opencv/find_most_distinct.cpp
 	$(CC) $(CFLAGS) -o $@ -c $^
 
-find_most_distinct: opencv/find_most_distinct.o
+find_most_distinct: opencv/find_most_distinct.o protos_middleman
 	$(LINK) -o $@ $^ $(LFLAGS)
 
 clean:
 	rm -f find_most_distinct *.o
+	rm /tmp/protos_middleman

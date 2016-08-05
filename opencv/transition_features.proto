@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package features;
+
+// Shorthand for a single 2D coordinate.
+message Coordinate2D {
+  float x = 1;
+  float y = 2;
+}
+
+// Transition between two named frames.
+message Transition {
+  string img_file_1 = 1;
+  string img_file_2 = 2;
+  string img_file_diff = 3;
+  Coordinate2D img_dimensions = 4;
+
+  float rss_distance_sum = 5;
+  float rss_distance_variance = 6;
+  
+  message Rectangle {
+    Coordinate2D top_left = 1;
+    Coordinate2D bottom_right = 2;
+    float rss_distance_sum = 3;
+  }
+
+  Rectangle interest_box = 7;
+}
