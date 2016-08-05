@@ -50,41 +50,6 @@ struct SURFMatcher
     }
 };
 
-static void ImageDifferences(const Mat& img1,
-			     const Mat& img2,
-			     std::vector<KeyPoint>& unmatched_keypoints)
-{
-  //declare input/output
-  std::vector<KeyPoint> keypoints1, keypoints2;
-  std::vector<DMatch> matches;
-
-  UMat _descriptors1, _descriptors2;
-  Mat descriptors1 = _descriptors1.getMat(ACCESS_RW);
-  Mat descriptors2 = _descriptors2.getMat(ACCESS_RW);
-  
-  //instantiate detectors/matchers
-  SURFDetector surf;
-  SURFMatcher<BFMatcher> matcher;
-  
-  surf(img1, Mat(), keypoints1, descriptors1);
-  surf(img2, Mat(), keypoints2, descriptors2);
-  matcher.match(descriptors1, descriptors2, matches);
-
-  std::vector<bool> kp1_matched(keypoints1.size(), false);
-  std::vector<bool> kp2_matched(keypoints2.size(), false);
-  for (const DMatch& match : matches) {
-    kp1_matched[match.queryIdx] = true;
-    kp2_matched[match.trainIdx] = true;
-  }
-  for (int i = 0; i < kp2_matched.size(); ++i) {
-    if (!kp2_matched[i]) {
-      if (keypoints2[i].octave > 2) {
-	unmatched_keypoints.push_back(keypoints2[i]);
-      }
-    }
-  }
-}
-
 static string GetParentDirName(const string& filename) {
   vector<string> file_tokens;
   split(filename, '/', file_tokens);
@@ -94,78 +59,30 @@ static string GetParentDirName(const string& filename) {
   return "";
 }
 
-static void ProcessImageDiff(const string& img_file_1,
-			     const string& img_file_2,
-			     const string& diff_output_dir,
-			     std::ofstream& manifest) {
-
-  UMat img1, img2;
-  imread(img_file_1, IMREAD_GRAYSCALE).copyTo(img1);
-  if(img1.empty()) {
-    std::cout << "Couldn't load " << img_file_1 << std::endl;
-    return;
-  }
-  
-  imread(img_file_2, IMREAD_GRAYSCALE).copyTo(img2);
-  if(img2.empty()) {
-    std::cout << "Couldn't load " << img_file_2 << std::endl;
-    return;
-  }
-  const string img_id_1 = GetParentDirName(img_file_1);
-  const string img_id_2 = GetParentDirName(img_file_2);
-  const string output_file = diff_output_dir + "/" + img_id_1 + "_" + img_id_2 + ".jpeg";
-
-  Mat output_image1;
-  Mat output_image2;
-  {	
-    std::vector<KeyPoint> unmatched_keypoints;
-    ImageDifferences(img1.getMat(ACCESS_READ),
-		     img2.getMat(ACCESS_READ),
-		     unmatched_keypoints);
-    
-    drawKeypoints(img2, unmatched_keypoints, output_image1,
-		  Scalar(0,0,255), DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
-    manifest << "diff," << img_id_1 << "," << img_id_2 <<
-      "," << unmatched_keypoints.size() << "," << output_file << "\n";
-  }
-  {
-    std::vector<KeyPoint> unmatched_keypoints;
-    ImageDifferences(img2.getMat(ACCESS_READ),
-		     img1.getMat(ACCESS_READ),
-		     unmatched_keypoints);
-    drawKeypoints(img1, unmatched_keypoints, output_image2,
-		  Scalar(0,0,255), DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
-    manifest << "diff," << img_id_2 << "," << img_id_1 << ","
-	     << unmatched_keypoints.size() << "," << output_file << "\n";
-  }
-  Size sz1 = output_image1.size();
-  Size sz2 = output_image2.size();
-  Mat im3(sz1.height, sz1.width+sz2.width, CV_8UC3);
-  Mat left(im3, Rect(0, 0, sz1.width, sz1.height));
-  output_image1.copyTo(left);
-  Mat right(im3, Rect(sz1.width, 0, sz2.width, sz2.height));
-  output_image2.copyTo(right);
-  imwrite(output_file, im3); //diff_output_dir + "/" + img_id_1 + "_" + img_id_2 + ".jpeg", im3);
-  manifest.flush();
-}
-
 static void ProcessImageDiff2(const string& img_file_1,
 			      const string& img_file_2,
 			      const string& diff_output_dir,
 			      std::ofstream& manifest) {			      
-  UMat img1, img2;
-  imread(img_file_1, IMREAD_COLOR).copyTo(img1);
-  if(img1.empty()) {
+  UMat img1_, img2_, img1, img2;
+  imread(img_file_1, IMREAD_COLOR).copyTo(img1_);
+  if(img1_.empty()) {
     std::cout << "Couldn't load " << img_file_1 << std::endl;
     return;
   }
   
-  imread(img_file_2, IMREAD_COLOR).copyTo(img2);
-  if(img2.empty()) {
+  imread(img_file_2, IMREAD_COLOR).copyTo(img2_);
+  if(img2_.empty()) {
     std::cout << "Couldn't load " << img_file_2 << std::endl;
     return;
   }
+  pyrDown( img1_, img1, Size( img1_.cols/2, img1_.rows/2 ));
+  pyrDown( img1, img1_, Size( img1.cols/2, img1.rows/2 ));
+  pyrDown( img1_, img1, Size( img1_.cols/2, img1_.rows/2 ));
 
+  pyrDown( img2_, img2, Size( img2_.cols/2, img2_.rows/2 ));
+  pyrDown( img2, img2_, Size( img2.cols/2, img2.rows/2 ));
+  pyrDown( img2_, img2, Size( img2_.cols/2, img2_.rows/2 ));
+	   
   const string img_id_1 = GetParentDirName(img_file_1);
   const string img_id_2 = GetParentDirName(img_file_2);
   const string output_file = diff_output_dir + "/" + img_id_1 + "_" + img_id_2 + ".jpeg";  
@@ -173,41 +90,65 @@ static void ProcessImageDiff2(const string& img_file_1,
   cv::absdiff(img1, img2, diffImage);
   cv::Mat foregroundMask = cv::Mat::zeros(diffImage.rows, diffImage.cols, CV_8UC1);
 
-  float dist;
-  float max_dist = 0;
+  float rss_distance;
+  float max_rss_distance = 0;  // Used for scaling colormap values.
 
   int n = 0;
   float mean = 0;
   float m2 = 0;
   
-  cv::Mat rss_distance = cv::Mat(diffImage.rows, diffImage.cols, CV_64F);
+  cv::Mat rss_distance_matrix = cv::Mat(diffImage.rows, diffImage.cols, CV_64F);
   for(int j=0; j<diffImage.rows; ++j) {
     for(int i=0; i<diffImage.cols; ++i) {
       n += 1;
       cv::Vec3b pix = diffImage.at<cv::Vec3b>(j,i);
-      dist = sqrt((pix[0]*pix[0] + pix[1]*pix[1] + pix[2]*pix[2]));
-      float delta = dist - mean;
+      rss_distance = sqrt((pix[0]*pix[0] + pix[1]*pix[1] + pix[2]*pix[2]));
+      float delta = rss_distance - mean;
       mean += delta / n;
-      m2 += delta * (dist - mean);
-      if (max_dist < dist) {
-	max_dist = dist;
+      m2 += delta * (rss_distance - mean);
+      if (max_rss_distance < rss_distance) {
+	max_rss_distance = rss_distance;
       }
-      rss_distance.at<float>(j,i) = dist;
+      rss_distance_matrix.at<float>(j,i) = rss_distance;
     }
   }
 
   float variance = m2 / (n - 1);
   float std_dev = sqrt(variance);
-  for (int j=0; j<rss_distance.rows; ++j) {
-    for (int i=0; i<rss_distance.cols; ++i) {
-      dist = rss_distance.at<float>(j,i);
-      foregroundMask.at<unsigned char>(j,i) = 255 * (dist/max_dist);
+  cv::Point top_left;
+  cv::Point bottom_right;
+  for (int j=0; j<rss_distance_matrix.rows; ++j) {
+    for (int i=0; i<rss_distance_matrix.cols; ++i) {
+      rss_distance = rss_distance_matrix.at<float>(j,i);
+      if (rss_distance > 2.5 * std_dev) {
+	cout << "i=" << i << ",j=" << j << ",stddevs=" << rss_distance/std_dev << "\n";
+	// The far sides of the frame keep moving as long as we're in an interesting area.
+	if (bottom_right.x < j) {
+	  cout << "  adjusting bottom_right.x from " << bottom_right.x << " to " << j << "\n";
+	  bottom_right.x = j;
+	}
+	if (bottom_right.y < i) {
+	  cout << "  adjusting bottom_right.y from " << bottom_right.y << " to " << i << "\n";
+	  bottom_right.y = i;
+	}
+	if (top_left.x == 0 || j < top_left.x) {
+	  cout << "  adjusting top_left.x from " << top_left.x << " to " << j << "\n";
+	  top_left.x = j;
+	}
+	if (top_left.y == 0 || i < top_left.y) {
+	  cout << "  adjusting top_left.y from " << top_left.y << "  to " << i << "\n";
+	  top_left.y = i;
+	}
+      }
+      foregroundMask.at<unsigned char>(j,i) = 255 * (rss_distance/max_rss_distance);
     }
   }
+  cout << "Final top_left.x=" << top_left.x << " top_left.y=" << top_left.y << " bottom_right.x=" << bottom_right.x << " bottom_right.y=" << bottom_right.y << "\n";
   manifest << "mask," << img_file_1 << "," << img_file_2 << ","
 	   << variance << "," << output_file << "\n";
   Mat im_color;
   applyColorMap(foregroundMask, im_color, COLORMAP_JET);
+  rectangle(im_color, top_left, bottom_right, Scalar(0,0,255), 1);
   imwrite(output_file, im_color);
 }
 
