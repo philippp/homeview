@@ -5,6 +5,7 @@
 #include "opencv2/core/utility.hpp"
 #include "opencv2/imgcodecs.hpp"
 #include "opencv2/imgproc.hpp"
+#include "transition_features.pb.h"
 
 using namespace std;
 using namespace cv;
@@ -33,24 +34,20 @@ static string GetParentDirName(const string& filename) {
  */
 static void CalcRSSDistance(const cv::Mat& diffImage,
 			    cv::Mat* rss_distance_matrix,
-			    float* max_rss_distance,
+			    float* mean_rss_distance,
 			    float* sum_rss_distance,
 			    float* variance) {
   float rss_distance;
   int n = 0;
-  float mean = 0;
   float m2 = 0;  
   for(int j=0; j<diffImage.rows; ++j) {
     for(int i=0; i<diffImage.cols; ++i) {
       n += 1;
       cv::Vec3b pix = diffImage.at<cv::Vec3b>(j,i);
       rss_distance = sqrt((pix[0]*pix[0] + pix[1]*pix[1] + pix[2]*pix[2]));
-      float delta = rss_distance - mean;
-      mean += delta / n;
-      m2 += delta * (rss_distance - mean);
-      if (*max_rss_distance < rss_distance) {
-	*max_rss_distance = rss_distance;
-      }
+      float delta = rss_distance - *mean_rss_distance;
+      *mean_rss_distance += delta / n;
+      m2 += delta * (rss_distance - *mean_rss_distance);
       rss_distance_matrix->at<float>(j,i) = rss_distance;
       *sum_rss_distance += rss_distance;
     }
@@ -61,7 +58,11 @@ static void CalcRSSDistance(const cv::Mat& diffImage,
 static void ProcessImageDiff2(const string& img_file_1,
 			      const string& img_file_2,
 			      const string& diff_output_dir,
-			      std::ofstream& manifest) {			      
+			      features::TransitionSequence* sequence) {
+  features::Transition transition;
+  transition.set_img_file_1(img_file_1);
+  transition.set_img_file_2(img_file_2);
+
   UMat img1_, img2_, img1, img2;
   imread(img_file_1, IMREAD_COLOR).copyTo(img1_);
   if(img1_.empty()) {
@@ -81,29 +82,39 @@ static void ProcessImageDiff2(const string& img_file_1,
   pyrDown( img2_, img2, Size( img2_.cols/2, img2_.rows/2 ));
   pyrDown( img2, img2_, Size( img2.cols/2, img2.rows/2 ));
   pyrDown( img2_, img2, Size( img2_.cols/2, img2_.rows/2 ));
-	   
+  transition.mutable_img_dimensions()->set_x(img1.cols);
+  transition.mutable_img_dimensions()->set_y(img1.rows);
+  
   const string img_id_1 = GetParentDirName(img_file_1);
   const string img_id_2 = GetParentDirName(img_file_2);
-  const string output_file = diff_output_dir + "/" + img_id_1 + "_" + img_id_2 + ".jpeg";  
-  cv::Mat diffImage;
-  cv::absdiff(img1, img2, diffImage);
-
-  float sum_rss_distance = 0;
-  float max_rss_distance = 0;  // Used for scaling colormap values.
-  float variance;
-  cv::Mat rss_distance_matrix = cv::Mat(diffImage.rows, diffImage.cols, CV_64F);
-  CalcRSSDistance(diffImage,
-		  &rss_distance_matrix,
-		  &max_rss_distance,
-		  &sum_rss_distance,
-		  &variance);
-  
-  float std_dev = sqrt(variance);
+  transition.set_id(img_id_1 + "_" + img_id_2);
+  const string output_file = diff_output_dir + "/" + img_id_1 + "_" + img_id_2 + ".jpeg";
+  transition.set_img_file_diff(output_file);
+  cv::Mat rss_distance_matrix = cv::Mat(img1.rows, img1.cols, CV_64F);
+  {
+    float sum_rss_distance = 0;
+    float mean_rss_distance = 0;
+    float variance;
+    cv::Mat diffImage;
+    cv::absdiff(img1, img2, diffImage);
+    CalcRSSDistance(diffImage,
+		    &rss_distance_matrix,
+		    &sum_rss_distance,
+		    &variance,
+		    &mean_rss_distance);
+    transition.set_rss_distance_sum(sum_rss_distance);
+    transition.set_rss_distance_variance(variance);
+    transition.set_rss_distance_mean(mean_rss_distance);
+  }
+  float std_dev = sqrt(transition.rss_distance_variance());
   cv::Point top_left;
   cv::Point bottom_right;
-  cv::Mat foregroundMask = cv::Mat::zeros(diffImage.rows, diffImage.cols, CV_8UC1);
+  cv::Mat foregroundMask = cv::Mat::zeros(rss_distance_matrix.rows,
+					  rss_distance_matrix.cols,
+					  CV_8UC1);
   float rss_distance_sum_in_rectangle = 0;
   float rss_distance;
+  float max_rss_distance = transition.rss_distance_mean() + 5 * std_dev;
   for (int j=0; j<rss_distance_matrix.rows; ++j) {
     for (int i=0; i<rss_distance_matrix.cols; ++i) {
       rss_distance = rss_distance_matrix.at<float>(j,i);
@@ -128,10 +139,14 @@ static void ProcessImageDiff2(const string& img_file_1,
       foregroundMask.at<unsigned char>(j,i) = 255 * (rss_distance/max_rss_distance);
     }
   }
-  manifest << "images," << img_file_1 << "," << img_file_2 << "," << output_file << "," << rss_distance_matrix.rows << "," << rss_distance_matrix.cols << "\n";
-  manifest << "diff," << variance << "," << sum_rss_distance << "," << rss_distance_sum_in_rectangle << "\n";
-  manifest << "rectangle," << top_left.x << "," << top_left.y << "," << bottom_right.x << "," <<  bottom_right.y << "\n";
+  features::Transition_Rectangle* rect = transition.mutable_interest_box();
+  rect->set_rss_distance_sum(rss_distance_sum_in_rectangle);
+  rect->mutable_top_left()->set_x(top_left.x);
+  rect->mutable_top_left()->set_y(top_left.y);
+  rect->mutable_bottom_right()->set_x(bottom_right.x);
+  rect->mutable_bottom_right()->set_y(bottom_right.y);
 
+  sequence->add_transitions()->CopyFrom(transition);
   Mat im_color;
   applyColorMap(foregroundMask, im_color, COLORMAP_JET);
   rectangle(im_color, top_left, bottom_right, Scalar(0,0,255), 1);
@@ -153,7 +168,7 @@ int main(int argc, char* argv[])
         return EXIT_SUCCESS;
     }
     string outpath = cmd.get<string>("o");
-    std::ofstream manifest_file(outpath + "/sequence_metadata.csv", std::ofstream::out);
+    std::ofstream manifest_file(outpath + "/sequence_metadata.rio", std::ofstream::out);
 
     string image_files_str;
     string line;
@@ -163,14 +178,16 @@ int main(int argc, char* argv[])
     vector<string> image_files;
     split(image_files_str, ' ', image_files);
     string last_image_file = "";
+    features::TransitionSequence sequence;
     for (const string& image_file : image_files) {
       if (last_image_file.empty()) {
 	last_image_file = image_file;
 	continue;
       }
-      ProcessImageDiff2(last_image_file, image_file, outpath, manifest_file);
+      ProcessImageDiff2(last_image_file, image_file, outpath, &sequence);
       cout << "Diffed " << last_image_file << " " << image_file << "\n";
       last_image_file = image_file;
     }
+    manifest_file << sequence.SerializeAsString();
     return EXIT_SUCCESS;
 }

@@ -10,19 +10,24 @@ message Coordinate2D {
 
 // Transition between two named frames.
 message Transition {
-  string img_file_1 = 1;
-  string img_file_2 = 2;
-  string img_file_diff = 3;
-  Coordinate2D img_dimensions = 4;
+  string id = 1;
+  string img_file_1 = 2;
+  string img_file_2 = 3;
+  string img_file_diff = 4;
+  Coordinate2D img_dimensions = 5;
 
-  float rss_distance_sum = 5;
-  float rss_distance_variance = 6;
+  float rss_distance_sum = 6;
+  float rss_distance_variance = 7;
+  float rss_distance_mean = 8;
   
   message Rectangle {
     Coordinate2D top_left = 1;
     Coordinate2D bottom_right = 2;
     float rss_distance_sum = 3;
   }
+  Rectangle interest_box = 9;
+}
 
-  Rectangle interest_box = 7;
+message TransitionSequence {
+  repeated Transition transitions = 1;
 }
