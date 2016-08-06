@@ -8,6 +8,7 @@ import pdb
 import collections
 import datetime
 import csv
+import opencv.transition_features_pb2 as transition_features
 
 application = flask.Flask(__name__)
 
@@ -54,7 +55,8 @@ def get_last_24h_datestamps():
     datestamps = (expand_ds(yesterday_date, datestamps_yesterday[i:]) +
                   expand_ds(today_date, datestamps_today))                  
     return datestamps
-    
+
+
 @application.route("/")
 def hello():
     datestamp = flask.request.args.get('datestamp', 'latest')
@@ -71,27 +73,39 @@ def analysis(year, month, day, prefix_filter):
     filename = "captures/%s/%s/%s/analysis" % (year, month, day)
     if len(prefix_filter):
         filename += "_%s" % (prefix_filter)
-    filename += "/sequence_metadata.csv"
-    sequence = list()
+    filename += "/sequence_metadata.rio"
     if not os.path.isfile(filename):
         return "File not found"
-    
-    with open(filename, 'rb') as csvfile:
-        reader = csv.reader(csvfile)
-        for row in reader:
-            # mask,captures/2016/08/01/235900/video0.jpeg,captures/2016/08/01/235930/video0.jpeg,19.6643,captures/2016/08/01/analysis/235900_235930.jpeg
-            if len(row) > 4:
-                sequence.append(dict(
-                    label=row[0],
-                    img1=row[1],
-                    img2=row[2],
-                    score=row[3],
-                    img_diff=row[4]
-                ))
-    ranked_sequence = sorted(sequence, key=lambda d: float(d['score']))[::-1]
+
+    sequence = transition_features.TransitionSequence()    
+    sequence.ParseFromString(open(filename, 'rb').read())
+    ranked_sequence = sorted(sequence.transitions,
+                             key=lambda d: d.rss_distance_variance)[::-1]
     ranked_sequence = ranked_sequence[:40]
+    ranked_sequence_dicts = list()
+    for transition in ranked_sequence:
+        ranked_sequence_dicts.append(dict(
+            label=transition.id,
+            img1=transition.img_file_1,
+            img2=transition.img_file_2,
+            score=transition.rss_distance_variance,
+            img_diff=transition.img_file_diff
+        ))
+        
     return flask.render_template('analysis.html',
-                                 ranked_sequence=ranked_sequence)
+                                 ranked_sequence=ranked_sequence_dicts)
+
+# When running locally (without nginx), serve files locally.
+local_captures_path = '/disabled_non_local'
+if __name__ == "__main__":
+    local_captures_path = '/captures/<path:path>'
+    
+@application.route(local_captures_path)
+def send_captures(path):
+    if __name__ == "__main__":
+        return flask.send_from_directory('captures', path)
+    else:
+        return "disabled_non_local"
 
 
 if __name__ == "__main__":
