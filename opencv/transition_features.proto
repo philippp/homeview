@@ -4,8 +4,8 @@ package features;
 
 // Shorthand for a single 2D coordinate.
 message Coordinate2D {
-  float x = 1;
-  float y = 2;
+  int64 x = 1;
+  int64 y = 2;
 }
 
 // Transition between two named frames.
@@ -16,14 +16,14 @@ message Transition {
   string img_file_diff = 4;
   Coordinate2D img_dimensions = 5;
 
-  float rss_distance_sum = 6;
+  int64 rss_distance_sum = 6;
   float rss_distance_variance = 7;
-  float rss_distance_mean = 8;
+  int32 rss_distance_mean = 8;
   
   message Rectangle {
     Coordinate2D top_left = 1;
     Coordinate2D bottom_right = 2;
-    float rss_distance_sum = 3;
+    int32 rss_distance_mean = 3;
   }
   Rectangle interest_box = 9;
 }
