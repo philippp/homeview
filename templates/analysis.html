@@ -3,10 +3,15 @@
 <table>
   {% for sequence in ranked_sequence %}
   <tr>
-    <td>{{sequence.score}}</td>
-    <td><img src="/{{sequence.img1}}" style="width:400px;"/></td>
-    <td><img src="/{{sequence.img2}}" style="width:400px;"/></td>
-    <td><img src="/{{sequence.img_diff}}" style="width:400px;"/></td>
+    <td>
+      <b>score: {{sequence.score}}</b><br/>
+      rss_distance_variance: {{sequence.rss_distance_variance}}<br/>
+      rss_distance_mean: {{sequence.rss_distance_mean}}<br/>
+      rectangle_rss_distance_mean: {{sequence.interest_box.rss_distance_mean}}<br/>
+    </td>
+    <td><img src="/{{sequence.img_file_1}}" style="width:400px;"/></td>
+    <td><img src="/{{sequence.img_file_2}}" style="width:400px;"/></td>
+    <td><img src="/{{sequence.img_file_diff}}" style="width:400px;"/></td>
   </tr>
   {% endfor %}
 </table>  

@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import os
 import os.path
+import math
 import flask
 import pprint
 import xmltodict
@@ -79,21 +80,13 @@ def analysis(year, month, day, prefix_filter):
 
     sequence = transition_features.TransitionSequence()    
     sequence.ParseFromString(open(filename, 'rb').read())
+    for t in sequence.transitions:
+        t.score = int(t.rss_distance_variance * math.sqrt(float(t.interest_box.rss_distance_mean)/t.rss_distance_mean))
     ranked_sequence = sorted(sequence.transitions,
-                             key=lambda d: d.rss_distance_variance)[::-1]
-    ranked_sequence = ranked_sequence[:40]
-    ranked_sequence_dicts = list()
-    for transition in ranked_sequence:
-        ranked_sequence_dicts.append(dict(
-            label=transition.id,
-            img1=transition.img_file_1,
-            img2=transition.img_file_2,
-            score=transition.rss_distance_variance,
-            img_diff=transition.img_file_diff
-        ))
-        
+                             key=lambda d: d.score)[::-1]
+    ranked_sequence = ranked_sequence[:100]
     return flask.render_template('analysis.html',
-                                 ranked_sequence=ranked_sequence_dicts)
+                                 ranked_sequence=ranked_sequence)
 
 # When running locally (without nginx), serve files locally.
 local_captures_path = '/disabled_non_local'

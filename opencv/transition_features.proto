@@ -15,7 +15,7 @@ message Transition {
   string img_file_2 = 3;
   string img_file_diff = 4;
   Coordinate2D img_dimensions = 5;
-
+  int64 score = 10;
   int64 rss_distance_sum = 6;
   float rss_distance_variance = 7;
   int32 rss_distance_mean = 8;

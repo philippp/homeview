@@ -60,7 +60,7 @@ static void FindHotRectangle(const cv::Mat& rss_distance_matrix,
 			     int64 scaling_factor,
 			     cv::Point* top_left,
 			     cv::Point* bottom_right,
-			     float* mean_rss_distance,
+			     uint32_t* mean_rss_distance,
 			     float* variance) {
   cv::Mat matrix_scaled(rss_distance_matrix);
   while (scaling_factor > 1) {
@@ -70,6 +70,7 @@ static void FindHotRectangle(const cv::Mat& rss_distance_matrix,
 		 matrix_scaled.rows/2));
     scaling_factor = scaling_factor/2;
   }
+  std::cout << "Min sig distance=" << min_significant_distance << "\n";
   float distance_sum = 0;
   for (int j=0; j<matrix_scaled.rows; ++j) {
     for (int i=0; i<matrix_scaled.cols; ++i) {
@@ -94,9 +95,16 @@ static void FindHotRectangle(const cv::Mat& rss_distance_matrix,
       }
     }
   }
-  *mean_rss_distance = (distance_sum/(matrix_scaled.rows * matrix_scaled.cols));
+  uint32_t rectangle_size = ((bottom_right->x - top_left->x)
+			     *(bottom_right->y - top_left->y));
+  std::cout << "Rectangle size: " << rectangle_size << "\n";
+  if (rectangle_size < 4) {
+    *mean_rss_distance = 0;
+    return;
+  }
+  *mean_rss_distance = static_cast<uint32_t>(static_cast<float>(distance_sum)/rectangle_size);
   *variance = 0;
-
+  std::cout << "Mean Rectangle RSS Distance: " << *mean_rss_distance << "\n";
   uint16_t x_scale = rss_distance_matrix.cols / matrix_scaled.cols;
   uint16_t y_scale = rss_distance_matrix.cols / matrix_scaled.cols;
 
@@ -106,6 +114,10 @@ static void FindHotRectangle(const cv::Mat& rss_distance_matrix,
 				       (bottom_right->x * x_scale) + x_scale);
   bottom_right->y = std::min<uint16_t>(rss_distance_matrix.rows,
 				       (bottom_right->y * y_scale) + y_scale);
+  rectangle_size = ((bottom_right->x - top_left->x)
+		    *(bottom_right->y - top_left->y));
+  std::cout << "Scaled rectangle size: " << rectangle_size << "\n";
+
 }
 			     
 static void ProcessImageDiff2(const string& img_file_1,
@@ -154,7 +166,7 @@ static void ProcessImageDiff2(const string& img_file_1,
   float std_dev = sqrt(transition.rss_distance_variance());
   cv::Point top_left;
   cv::Point bottom_right;
-  float rss_distance_mean_in_rectangle;
+  uint32_t rss_distance_mean_in_rectangle;
   float rss_distance_variance_in_rectangle;
   FindHotRectangle(rss_distance_matrix,
 		   4 * std_dev,
@@ -183,6 +195,8 @@ static void ProcessImageDiff2(const string& img_file_1,
 
   Mat im_color;
   applyColorMap(foregroundMask, im_color, COLORMAP_JET);
+  std::cout << "brx=" << bottom_right.x << " tlx=" << top_left.x
+	    << "bry=" << bottom_right.y << " tly=" << top_left.y << "\n";
   rectangle(im_color, top_left, bottom_right, Scalar(0,0,255), 4);
   const string output_file = diff_output_dir + "/" + img_id_1 + "_" + img_id_2 + ".jpeg";
   transition.set_img_file_diff(output_file);
@@ -216,12 +230,15 @@ int main(int argc, char* argv[])
     split(image_files_str, ' ', image_files);
     string last_image_file = "";
     features::TransitionSequence sequence;
+    int i = 0;
     for (const string& image_file : image_files) {
       if (last_image_file.empty()) {
 	last_image_file = image_file;
 	continue;
       }
+      //      if (last_image_file.find("203430") != std::string::npos && image_file.find("203500") != std::string::npos) {
       ProcessImageDiff2(last_image_file, image_file, outpath, &sequence);
+	//}
       cout << "Diffed " << last_image_file << " " << image_file << "\n";
       last_image_file = image_file;
     }
