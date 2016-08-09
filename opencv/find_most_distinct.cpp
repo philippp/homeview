@@ -130,7 +130,6 @@ static void ProcessImageDiff2(const UMat& img1,
   transition->mutable_img_dimensions()->set_x(img1.cols);
   transition->mutable_img_dimensions()->set_y(img1.rows);
   
-  transition->set_id(img_id_1 + "_" + img_id_2);
   cv::Mat rss_distance_matrix = cv::Mat(img1.rows, img1.cols, CV_16U);
   {  // Calculate the RSS Distance matrix and associated stats.
     float sum_rss_distance = 0;
@@ -177,9 +176,8 @@ static void ProcessImageDiff2(const UMat& img1,
   rect->mutable_bottom_right()->set_x(bottom_right.x);
   rect->mutable_bottom_right()->set_y(bottom_right.y);
 
-  Mat img_diff;
-  applyColorMap(foregroundMask, img_diff, COLORMAP_JET);
-  rectangle(img_diff, top_left, bottom_right, Scalar(0,0,255), 4);
+  applyColorMap(foregroundMask, *img_diff, COLORMAP_JET);
+  rectangle(*img_diff, top_left, bottom_right, Scalar(0,0,255), 4);
 }
 
 static void ProcessImageFiles(vector<string>& image_files, string& outpath) {
@@ -209,7 +207,7 @@ static void ProcessImageFiles(vector<string>& image_files, string& outpath) {
       features::Transition transition;
       transition.set_img_file_1(last_image_file);
       transition.set_img_file_2(image_file);
-
+      transition.set_id(last_image_id + "_" + image_id);
       ProcessImageDiff2(last_image_matrix, image_matrix, outpath, &transition);
       const string output_file = (outpath + "/" + last_image_id + "_" +
 				  image_id + ".jpeg");
