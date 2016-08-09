@@ -122,33 +122,15 @@ static void FindHotRectangle(const cv::Mat& rss_distance_matrix,
 
 }
 			     
-static void ProcessImageDiff2(const string& img_file_1,
-			      const string& img_file_2,
-			      const string& diff_output_dir,
-			      features::TransitionSequence* sequence) {
-  features::Transition transition;
-  transition.set_img_file_1(img_file_1);
-  transition.set_img_file_2(img_file_2);
+static void ProcessImageDiff2(const UMat& img1,
+			      const UMat& img2,
+			      const Mat* img_diff,
+			      features::Transition* transition) {
 
-  UMat img1, img2;
-  imread(img_file_1, IMREAD_COLOR).copyTo(img1);
-  if(img1.empty()) {
-    std::cout << "Couldn't load " << img_file_1 << std::endl;
-    return;
-  }
+  transition->mutable_img_dimensions()->set_x(img1.cols);
+  transition->mutable_img_dimensions()->set_y(img1.rows);
   
-  imread(img_file_2, IMREAD_COLOR).copyTo(img2);
-  if(img2.empty()) {
-    std::cout << "Couldn't load " << img_file_2 << std::endl;
-    return;
-  }
-  const string img_id_1 = GetParentDirName(img_file_1);
-  const string img_id_2 = GetParentDirName(img_file_2);
-
-  transition.mutable_img_dimensions()->set_x(img1.cols);
-  transition.mutable_img_dimensions()->set_y(img1.rows);
-  
-  transition.set_id(img_id_1 + "_" + img_id_2);
+  transition->set_id(img_id_1 + "_" + img_id_2);
   cv::Mat rss_distance_matrix = cv::Mat(img1.rows, img1.cols, CV_16U);
   {  // Calculate the RSS Distance matrix and associated stats.
     float sum_rss_distance = 0;
@@ -161,11 +143,11 @@ static void ProcessImageDiff2(const string& img_file_1,
 		    &mean_rss_distance,
 		    &sum_rss_distance,
 		    &variance);
-    transition.set_rss_distance_sum(sum_rss_distance);
-    transition.set_rss_distance_variance(variance);
-    transition.set_rss_distance_mean(mean_rss_distance);
+    transition->set_rss_distance_sum(sum_rss_distance);
+    transition->set_rss_distance_variance(variance);
+    transition->set_rss_distance_mean(mean_rss_distance);
   }
-  float std_dev = sqrt(transition.rss_distance_variance());
+  float std_dev = sqrt(transition->rss_distance_variance());
   cv::Point top_left;
   cv::Point bottom_right;
   uint32_t rss_distance_mean_in_rectangle;
@@ -181,29 +163,23 @@ static void ProcessImageDiff2(const string& img_file_1,
   cv::Mat foregroundMask = cv::Mat::zeros(rss_distance_matrix.rows,
 					  rss_distance_matrix.cols,
 					  CV_8UC1);
-  uint16_t max_rss_distance = transition.rss_distance_mean() + 5 * std_dev;
+  uint16_t max_rss_distance = transition->rss_distance_mean() + 5 * std_dev;
   for (int j=0; j<rss_distance_matrix.rows; ++j) {
     for (int i=0; i<rss_distance_matrix.cols; ++i) {
       uint16_t rss_distance = rss_distance_matrix.at<uint16_t>(j,i);
       foregroundMask.at<unsigned char>(j,i) = 255 * (static_cast<float>(rss_distance)/static_cast<float>(max_rss_distance));
     }
   }
-  features::Transition_Rectangle* rect = transition.mutable_interest_box();
+  features::Transition_Rectangle* rect = transition->mutable_interest_box();
   rect->set_rss_distance_mean(rss_distance_mean_in_rectangle);
   rect->mutable_top_left()->set_x(top_left.x);
   rect->mutable_top_left()->set_y(top_left.y);
   rect->mutable_bottom_right()->set_x(bottom_right.x);
   rect->mutable_bottom_right()->set_y(bottom_right.y);
 
-  Mat im_color;
-  applyColorMap(foregroundMask, im_color, COLORMAP_JET);
-  std::cout << "brx=" << bottom_right.x << " tlx=" << top_left.x
-	    << "bry=" << bottom_right.y << " tly=" << top_left.y << "\n";
-  rectangle(im_color, top_left, bottom_right, Scalar(0,0,255), 4);
-  const string output_file = diff_output_dir + "/" + img_id_1 + "_" + img_id_2 + ".jpeg";
-  transition.set_img_file_diff(output_file);
-  imwrite(output_file, im_color);
-  sequence->add_transitions()->CopyFrom(transition);
+  Mat img_diff;
+  applyColorMap(foregroundMask, img_diff, COLORMAP_JET);
+  rectangle(img_diff, top_left, bottom_right, Scalar(0,0,255), 4);
 }
 
 static void ProcessImageFiles(vector<string>& image_files, string& outpath) {
@@ -212,15 +188,39 @@ static void ProcessImageFiles(vector<string>& image_files, string& outpath) {
     string last_image_file = "";
     features::TransitionSequence sequence;
     int i = 0;
+    UMat image_matrix;
+    UMat last_image_matrix;
+    string image_id;
+    string last_image_id;
+    string last_image_file;
     for (const string& image_file : image_files) {
-      if (last_image_file.empty()) {
-	last_image_file = image_file;
+      const string image_id = GetParentDirName(image_file);
+      imread(image_file, IMREAD_COLOR).copyTo(image_matrix);
+      if(image_matrix.empty()) {
+	std::cout << "Couldn't load " << image_file << std::endl;
+	return;
+      }
+      if (last_image_id.empty()) {
+	last_image_id = image_id;
+	last_image_matrix = image_matrix;
+	last_image_file = image_file
 	continue;
       }
-      //      if (last_image_file.find("203430") != std::string::npos && image_file.find("203500") != std::string::npos) {
-      ProcessImageDiff2(last_image_file, image_file, outpath, &sequence);
-	//}
+      features::Transition transition;
+      transition.set_img_file_1(last_image_file);
+      transition.set_img_file_2(image_file);
+
+      ProcessImageDiff2(last_image_matrix, image_matrix, outpath, &transition);
+      const string output_file = (outpath + "/" + last_image_id + "_" +
+				  image_id + ".jpeg");
+      transition->set_img_file_diff(output_file);
+      imwrite(output_file, im_color);
+
+      sequence.add_transition()->CopyFrom(transition)
       cout << "Diffed " << last_image_file << " " << image_file << "\n";
+
+      last_image_id = image_id;
+      last_image_matrix = image_matrix;
       last_image_file = image_file;
     }
     manifest_file << sequence.SerializeAsString();
