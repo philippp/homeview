@@ -4,8 +4,10 @@
 #include "opencv2/core.hpp"
 #include "opencv2/core/utility.hpp"
 #include "opencv2/imgcodecs.hpp"
+#include "opencv2/videoio.hpp"
 #include "opencv2/imgproc.hpp"
 #include "transition_features.pb.h"
+#include "opencv2/highgui/highgui.hpp"
 
 using namespace std;
 using namespace cv;
@@ -204,30 +206,9 @@ static void ProcessImageDiff2(const string& img_file_1,
   sequence->add_transitions()->CopyFrom(transition);
 }
 
-int main(int argc, char* argv[])
-{
-    const char* keys =
-      "{ h help     | false            | print help message  }"
-      "{ o output   | ./               | specify comparison output path }";
-
-    CommandLineParser cmd(argc, argv, keys);
-    if (cmd.get<bool>("help"))
-    {
-        std::cout << "Usage: surf_matcher [options]" << std::endl;
-        std::cout << "Available options:" << std::endl;
-        cmd.printMessage();
-        return EXIT_SUCCESS;
-    }
-    string outpath = cmd.get<string>("o");
-    std::ofstream manifest_file(outpath + "/sequence_metadata.rio", std::ofstream::out);
-
-    string image_files_str;
-    string line;
-    while (std::getline(std::cin, line)) {
-	image_files_str += (line + " ");
-    }
-    vector<string> image_files;
-    split(image_files_str, ' ', image_files);
+static void ProcessImageFiles(vector<string>& image_files, string& outpath) {
+    std::ofstream manifest_file(outpath + "/sequence_metadata.rio",
+				std::ofstream::out);
     string last_image_file = "";
     features::TransitionSequence sequence;
     int i = 0;
@@ -243,5 +224,56 @@ int main(int argc, char* argv[])
       last_image_file = image_file;
     }
     manifest_file << sequence.SerializeAsString();
+}
+
+static void ProcessVideoFeed(const cv::VideoCapture& capture, string& outpath) {
+  
+}
+
+int main(int argc, char* argv[])
+{
+    const char* keys =
+      "{ h help     | false            | print help message  }"
+      "{ r rtsp     |                  | load video from rtsp source  }"
+      "{ o output   | ./               | specify comparison output path }";
+
+    CommandLineParser cmd(argc, argv, keys);
+    if (cmd.get<bool>("help"))
+    {
+        std::cout << "Usage: surf_matcher [options]" << std::endl;
+        std::cout << "Available options:" << std::endl;
+        cmd.printMessage();
+        return EXIT_SUCCESS;
+    }
+    string outpath = cmd.get<string>("o");
+    string rtsp = cmd.get<string>("r");
+
+    if (!rtsp.empty()) {
+      cv::VideoCapture capture(rtsp);
+      if (!capture.isOpened()) {
+	//Error
+      }
+
+      cv::namedWindow("TEST", CV_WINDOW_AUTOSIZE);
+
+      cv::Mat frame;
+
+      while(1) {
+	if (!capture.read(frame)) {
+	  //Error
+	}
+	cv::imshow("TEST", frame);
+	cv::waitKey(30);
+      }
+    } else {
+      string image_files_str;
+      string line;
+      while (std::getline(std::cin, line)) {
+	image_files_str += (line + " ");
+      }
+      vector<string> image_files;
+      split(image_files_str, ' ', image_files);
+      ProcessImageFiles(image_files, outpath);
+    }
     return EXIT_SUCCESS;
 }
