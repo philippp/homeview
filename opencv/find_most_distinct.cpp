@@ -1,6 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <stdio.h>
+#include <stdlib.h>     /* atoi */
 #include "opencv2/core.hpp"
 #include "opencv2/core/utility.hpp"
 #include "opencv2/imgcodecs.hpp"
@@ -122,14 +123,13 @@ static void FindHotRectangle(const cv::Mat& rss_distance_matrix,
 
 }
 			     
-static void ProcessImageDiff2(const UMat& img1,
-			      const UMat& img2,
-			      const Mat* img_diff,
+static void ProcessImageDiff2(const Mat& img1,
+			      const Mat& img2,
+			      Mat* img_diff,
 			      features::Transition* transition) {
 
   transition->mutable_img_dimensions()->set_x(img1.cols);
   transition->mutable_img_dimensions()->set_y(img1.rows);
-  
   cv::Mat rss_distance_matrix = cv::Mat(img1.rows, img1.cols, CV_16U);
   {  // Calculate the RSS Distance matrix and associated stats.
     float sum_rss_distance = 0;
@@ -186,11 +186,10 @@ static void ProcessImageFiles(vector<string>& image_files, string& outpath) {
     string last_image_file = "";
     features::TransitionSequence sequence;
     int i = 0;
-    UMat image_matrix;
-    UMat last_image_matrix;
+    Mat image_matrix;
+    Mat last_image_matrix;
     string image_id;
     string last_image_id;
-    string last_image_file;
     for (const string& image_file : image_files) {
       const string image_id = GetParentDirName(image_file);
       imread(image_file, IMREAD_COLOR).copyTo(image_matrix);
@@ -198,71 +197,96 @@ static void ProcessImageFiles(vector<string>& image_files, string& outpath) {
 	std::cout << "Couldn't load " << image_file << std::endl;
 	return;
       }
-      if (last_image_id.empty()) {
+      if (last_image_file.empty()) {
 	last_image_id = image_id;
-	last_image_matrix = image_matrix;
-	last_image_file = image_file
+	image_matrix.copyTo(last_image_matrix);
+	last_image_file = image_file;
 	continue;
       }
       features::Transition transition;
       transition.set_img_file_1(last_image_file);
       transition.set_img_file_2(image_file);
       transition.set_id(last_image_id + "_" + image_id);
-      ProcessImageDiff2(last_image_matrix, image_matrix, outpath, &transition);
+      Mat diff_matrix;
+      ProcessImageDiff2(last_image_matrix, image_matrix, &diff_matrix, &transition);
+
       const string output_file = (outpath + "/" + last_image_id + "_" +
 				  image_id + ".jpeg");
-      transition->set_img_file_diff(output_file);
-      imwrite(output_file, im_color);
+      transition.set_img_file_diff(output_file);
+      imwrite(output_file, diff_matrix);
 
-      sequence.add_transition()->CopyFrom(transition)
+      sequence.add_transitions()->CopyFrom(transition);
       cout << "Diffed " << last_image_file << " " << image_file << "\n";
 
       last_image_id = image_id;
-      last_image_matrix = image_matrix;
+      image_matrix.copyTo(last_image_matrix);
       last_image_file = image_file;
     }
     manifest_file << sequence.SerializeAsString();
 }
 
-static void ProcessVideoFeed(const cv::VideoCapture& capture, string& outpath) {
-  
+static void ProcessVideoFeed(cv::VideoCapture& capture, string& outpath) {
+  cv::Mat last_frame;
+  cv::Mat frame;
+  // VideoWriter(const String& filename, int fourcc, double fps, Size frameSize, bool isColor=true)
+  cv::VideoWriter vw = VideoWriter(outpath+"/video.avi",
+				   CV_FOURCC('X','V','I','D'),
+				   20,
+				   Size((int)capture.get(CV_CAP_PROP_FRAME_WIDTH),
+					(int)capture.get(CV_CAP_PROP_FRAME_HEIGHT)));
+  cv::Mat img_diff;
+  for(int i = 0; i < 1000; ++i) {
+    if (!capture.read(frame)) {
+      std::cout << "Failed to read frame";
+    } else {
+      std::cout << "Captured frame " << i << "\n";
+    }
+    if( i == 0 ) {
+      frame.copyTo(last_frame);
+      continue;
+    }
+    features::Transition transition;
+    ProcessImageDiff2(last_frame, frame, &img_diff, &transition);
+    vw.write(img_diff);
+    frame.copyTo(last_frame);
+  }  
 }
 
 int main(int argc, char* argv[])
 {
     const char* keys =
       "{ h help     | false            | print help message  }"
-      "{ r rtsp     |                  | load video from rtsp source  }"
+      "{ c capture  |                  | capture video from a stream  }"
+      "{ f files    |                  | load from comma-separated list of files }"
       "{ o output   | ./               | specify comparison output path }";
 
     CommandLineParser cmd(argc, argv, keys);
     if (cmd.get<bool>("help"))
     {
-        std::cout << "Usage: surf_matcher [options]" << std::endl;
+        std::cout << "Usage: find_most_distinct [options]" << std::endl;
         std::cout << "Available options:" << std::endl;
         cmd.printMessage();
         return EXIT_SUCCESS;
     }
     string outpath = cmd.get<string>("o");
-    string rtsp = cmd.get<string>("r");
-
-    if (!rtsp.empty()) {
-      cv::VideoCapture capture(rtsp);
+    string capture_source = cmd.get<string>("c");
+    string files = cmd.get<string>("f");
+    
+    if (!capture_source.empty()) {
+      cv::VideoCapture capture(capture_source);
+      if (std::isdigit(capture_source[0], std::locale())) {
+	int i = atoi(capture_source.c_str());
+	std::cout << "Is Digit!\n";
+	capture = cv::VideoCapture(i);
+      }
       if (!capture.isOpened()) {
-	//Error
+	std::cout << "Failed to connect to capture source " << capture_source << "\n";
       }
-
-      cv::namedWindow("TEST", CV_WINDOW_AUTOSIZE);
-
-      cv::Mat frame;
-
-      while(1) {
-	if (!capture.read(frame)) {
-	  //Error
-	}
-	cv::imshow("TEST", frame);
-	cv::waitKey(30);
-      }
+      ProcessVideoFeed(capture, outpath);
+    } else if (!files.empty()) {
+      vector<string> image_files;
+      split(files, ',', image_files);
+      ProcessImageFiles(image_files, outpath);      
     } else {
       string image_files_str;
       string line;

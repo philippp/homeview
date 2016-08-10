@@ -81,7 +81,10 @@ def analysis(year, month, day, prefix_filter):
     sequence = transition_features.TransitionSequence()    
     sequence.ParseFromString(open(filename, 'rb').read())
     for t in sequence.transitions:
-        t.score = int(t.rss_distance_variance * math.sqrt(float(t.interest_box.rss_distance_mean)/t.rss_distance_mean))
+        if t.rss_distance_mean == 0:
+            t.score = 0
+        else:
+            t.score = int(t.rss_distance_variance * math.sqrt(float(t.interest_box.rss_distance_mean)/t.rss_distance_mean))
     ranked_sequence = sorted(sequence.transitions,
                              key=lambda d: d.score)[::-1]
     ranked_sequence = ranked_sequence[:100]
