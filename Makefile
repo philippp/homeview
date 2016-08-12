@@ -33,5 +33,6 @@ opencv/driver: opencv/driver.o opencv/transition_features.pb.o opencv/media_inpu
 clean:
 	rm -f opencv/driver *.o
 	rm -f opencv/*.pb.*
-	rm -f opencv/*_pb2.py
+	rm -f opencv/*_pb2.py*
 	rm -f opencv/*.o
+	rm -r opencv/*.pyc
