@@ -21,7 +21,7 @@ void Driver::AddMediaOutput(MediaOutput* output) {
   outputs_.push_back(std::unique_ptr<MediaOutput>(output));
 }
 
-void Driver::SetInputCopyOutput(MediaOutput* output) {
+void Driver::SetInputCopy(MediaOutput* output) {
   input_replica_.reset(output);
 }
 
@@ -46,12 +46,25 @@ void Driver::Run(int cycles) {
 
 }
 
+/**
+ * Expected use cases:
+ * 1. Training
+ * 1.a. Capture training frames from a streaming device
+ * 1.b. Iterate filters on sampled training frames
+ * 1.c. review annotations and scenes
+ * 2. Production
+ * 2.a. Capture scenes from a streaming device
+ */
 int main(int argc, char* argv[]) {
   const char* keys =
-    "{ h help     | false            | print help message  }"
-    "{ c capture  |                  | capture video from a stream  }"
-    "{ f files    |                  | load from comma-separated list of files }"
-    "{ o output   | ./               | specify comparison output path }";
+    "{ h help       | false | print help message  }"
+    "{ v video_in   |       | capture images from a video or device  }"
+    "{ i images_in  |       | load from wildcard or list of images }"
+    "{ c copy_input | false | Copy all input media to output directory }"
+    "{ d destination| ./    | destination directory }"
+    "{ o outputs    |       | scene outputs: (i)mage, (v)ideo, (r)endered}"
+    "{ a annotation |       | annotation outputs: (i)mage, (v)ideo, (r)endered }"
+    "{ l run_length | 100   | how long to run for (in frames) }";
   
   cv::CommandLineParser cmd(argc, argv, keys);
   if (cmd.get<bool>("help")){
@@ -60,16 +73,41 @@ int main(int argc, char* argv[]) {
     cmd.printMessage();
     return EXIT_SUCCESS;
   }
-  string outpath = cmd.get<string>("o");
-  string capture_source = cmd.get<string>("c");
-  string files = cmd.get<string>("f");
+  string outpath = cmd.get<string>("d");
+  string video_in = cmd.get<string>("v");
+  string images_in = cmd.get<string>("i");
+  bool copy_input = cmd.get<bool>("c");
+  string annotations = cmd.get<string>("a");
+  int run_length = cmd.get<int>("l");
   
   Driver driver;
-  driver.SetInput(new StreamInput("1"));
-  //driver.SetInputCopyOutput(new ImageOutput("/tmp", "input_"));
-  //driver.SetInputCopyOutput(new VideoOutput("input.avi", 20));
-  //driver.AddMediaOutput(new VideoOutput("video.avi", 20));
-  driver.AddMediaOutput(new RenderedOutput("processed"));
-  driver.SetSequenceOutput(new SequenceOutput("/tmp"));
-  driver.Run(5000);
+  if (!images_in.empty()) {
+    driver.SetInput(new FileInput(images_in));
+  } else if (!video_in.empty()) {
+    driver.SetInput(new StreamInput(video_in));
+  } else {
+    std::cout << "No input specified, trying device #1.";
+    driver.SetInput(new StreamInput("1"));
+  }
+  if (copy_input) {
+    driver.SetInputCopy(new ImageOutput(outpath, "input_"));
+  }
+  if (annotations.empty()) {
+    std::cout << "No annotation output specified.";
+  } 
+  for (const char& c : annotations) {
+    switch(c) {
+    case 'r':
+      driver.AddMediaOutput(new RenderedOutput("annotated"));
+      break;
+    case 'i':
+      driver.AddMediaOutput(new ImageOutput(outpath, "annotated_"));
+      break;
+    case 'v':
+      driver.AddMediaOutput(new VideoOutput(outpath, "annotated", 20));
+      break;
+    }
+  }
+  driver.SetSequenceOutput(new SequenceOutput(outpath));
+  driver.Run(run_length);
 }

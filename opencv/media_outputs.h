@@ -36,10 +36,11 @@ class MediaOutput {
  */
 class VideoOutput : public MediaOutput {
  public:
-  VideoOutput(const std::string& filename, int fps);
+  VideoOutput(const std::string& directory, const std::string& file_prefix, int fps);
   void WriteFrame(const cv::Mat& frame_matrix) override;
  private:
-  std::string filename_;
+  std::string file_prefix_;
+  std::string directory_;
   int fps_;
   std::unique_ptr<cv::VideoWriter> video_writer_;
 };

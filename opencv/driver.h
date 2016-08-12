@@ -11,7 +11,7 @@ class Driver {
  public:
   Driver();
   void SetInput(MediaInput* input);
-  void SetInputCopyOutput(MediaOutput* output);
+  void SetInputCopy(MediaOutput* output);
   void SetSequenceOutput(SequenceOutput* output);
   void AddMediaOutput(MediaOutput* output);
   void Run(int cycles);

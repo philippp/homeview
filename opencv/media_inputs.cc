@@ -1,6 +1,9 @@
 #include <fstream>
 #include <iostream>
 #include <stdio.h>
+#include <vector>
+#include <string>
+#include <glob.h>
 #include "media_inputs.h"
 #include "transition_features.pb.h"
 
@@ -14,6 +17,16 @@
 using std::vector;
 using std::string;
 using features::Transition;
+
+inline void MatchFiles(const std::string& pattern, vector<string>* files){
+  glob_t glob_result;
+  files->clear();
+  glob(pattern.c_str(), GLOB_TILDE, NULL, &glob_result);
+  for(int i=0; i < glob_result.gl_pathc; ++i){
+    files->push_back(string(glob_result.gl_pathv[i]));
+  }
+  globfree(&glob_result);
+}
 
 StreamInput::StreamInput(const string& source) {
   frame_idx_ = 0;
@@ -39,7 +52,11 @@ bool StreamInput::GetFrame(cv::Mat* frame_matrix) {
 
 FileInput::FileInput(const string& filenames) {
   vector<string> image_files;
-  if (filenames.find(",") != std::string::npos) {
+  if (filenames.find("*") != std::string::npos) {
+    // Scenario 1: Wildcard selection
+    MatchFiles(filenames, &image_files);
+  } // Scenario 2: List of files (below)
+  else if (filenames.find(",") != std::string::npos) {
     FileInput::Split(filenames, ',', image_files);
   } else if (filenames.find(" ") != std::string::npos) {
     FileInput::Split(filenames, ' ', image_files);

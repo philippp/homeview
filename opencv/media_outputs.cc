@@ -12,8 +12,11 @@
 
 using std::string;
 
-VideoOutput::VideoOutput(const string& filename, int fps) {
-  filename_ = filename;
+VideoOutput::VideoOutput(const string& directory,
+			 const string& file_prefix,
+			 int fps) {
+  directory_ = directory;
+  file_prefix_ = file_prefix;
   fps_ = fps;
 }
 
@@ -21,7 +24,7 @@ VideoOutput::VideoOutput(const string& filename, int fps) {
 void VideoOutput::WriteFrame(const cv::Mat& frame_matrix) {
   if (video_writer_.get() == nullptr) {
     video_writer_.reset(new cv::VideoWriter(
-        filename_,
+        directory_ + '/' + file_prefix_ + ".avi",
 	CV_FOURCC('D','I','V','3'),
 	fps_,
 	cv::Size((int)frame_matrix.cols,
@@ -30,7 +33,8 @@ void VideoOutput::WriteFrame(const cv::Mat& frame_matrix) {
   video_writer_->write(frame_matrix);
 }
 
-ImageOutput::ImageOutput(const string& directory, const string& file_prefix) {
+ImageOutput::ImageOutput(const string& directory,
+			 const string& file_prefix) {
   directory_ = directory;
   file_prefix_ = file_prefix;
   idx_ = 0;
@@ -41,7 +45,8 @@ void ImageOutput::WriteFrame(const cv::Mat& frame_matrix) {
   WriteFrame(frame_matrix, &filename);
 }
 
-void ImageOutput::WriteFrame(const cv::Mat& frame_matrix, string* filename) {
+void ImageOutput::WriteFrame(const cv::Mat& frame_matrix,
+			     string* filename) {
   *filename = directory_ + "/" + file_prefix_+ std::to_string(idx_) + ".jpeg";
   cv::imwrite(*filename, frame_matrix);
   idx_ += 1;
