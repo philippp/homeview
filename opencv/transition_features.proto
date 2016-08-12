@@ -8,7 +8,7 @@ message Coordinate2D {
   int64 y = 2;
 }
 
-// Transition between two named frames.
+// Transition from img_file_1 to img_file_2.
 message Transition {
   string id = 1;
   string img_file_1 = 2;

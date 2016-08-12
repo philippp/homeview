@@ -11,14 +11,17 @@ class Driver {
  public:
   Driver();
   void SetInput(MediaInput* input);
-  void SaveReplicatedInput(MediaOutput* output);
-  void AddOutput(MediaOutput* output);
+  void SetInputCopyOutput(MediaOutput* output);
+  void SetSequenceOutput(SequenceOutput* output);
+  void AddMediaOutput(MediaOutput* output);
   void Run(int cycles);
+
  private:
   std::vector<std::unique_ptr<MediaOutput>> outputs_;
   std::unique_ptr<MediaInput> input_;
   std::unique_ptr<MediaOutput> input_replica_;
   std::unique_ptr<MotionSensor> motion_sensor_;
+  std::unique_ptr<SequenceOutput> sequence_output_;
 };
 
 #endif

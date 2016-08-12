@@ -9,7 +9,7 @@ all: opencv/driver
 debug: CFLAGS += -DDEBUG -g
 debug: opencv/driver
 
-opencv/transition_features.pb.cc: opencv/transition_features.proto
+opencv/transition_features.pb.h: opencv/transition_features.proto
 	protoc --cpp_out=. --python_out=. opencv/transition_features.proto
 
 opencv/transition_features.pb.o: opencv/transition_features.pb.cc
@@ -21,11 +21,11 @@ opencv/event_detector.o: opencv/event_detector.cc
 opencv/media_inputs.o: opencv/media_inputs.cc
 	$(CC) $(CFLAGS) -o $@ -c $^
 
-opencv/media_outputs.o: opencv/media_outputs.cc
-	$(CC) $(CFLAGS) -o $@ -c $^
+opencv/media_outputs.o: opencv/media_outputs.cc opencv/transition_features.pb.h
+	$(CC) $(CFLAGS) -o $@ -c opencv/media_outputs.cc
 
-opencv/driver.o: opencv/driver.cc
-	$(CC) $(CFLAGS) -o $@ -c $^
+opencv/driver.o: opencv/driver.cc opencv/transition_features.pb.h
+	$(CC) $(CFLAGS) -o $@ -c opencv/driver.cc
 
 opencv/driver: opencv/driver.o opencv/transition_features.pb.o opencv/media_inputs.o opencv/media_outputs.o opencv/event_detector.o
 	$(LINK) -o $@ $^ $(LFLAGS)
