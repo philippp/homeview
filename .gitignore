@@ -4,4 +4,4 @@ captures
 *.o
 *.pb.*
 *_pb2.py
-find_most_distinct
+opencv/driver
