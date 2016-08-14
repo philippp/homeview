@@ -28,9 +28,12 @@ void Driver::SetInputCopy(MediaOutput* output) {
 void Driver::Run(int cycles) {
   bool is_frame_returned = true;
   features::TransitionSequence sequence;
-  for (int i = 0; i < cycles && is_frame_returned; ++i) {
+  for (int i = 0; (i < cycles || cycles < 0) && is_frame_returned; ++i) {
     cv::Mat frame;
     is_frame_returned = input_->GetFrame(&frame);
+    if (!is_frame_returned) {
+      break;
+    }
     if (input_replica_.get() != nullptr) {
       input_replica_->WriteFrame(frame);
     }
@@ -43,7 +46,6 @@ void Driver::Run(int cycles) {
   if (sequence_output_.get() != nullptr) {
     sequence_output_->WriteSequence(sequence);
   }
-
 }
 
 /**
@@ -64,7 +66,7 @@ int main(int argc, char* argv[]) {
     "{ d destination| ./    | destination directory }"
     "{ o outputs    |       | scene outputs: (i)mage, (v)ideo, (r)endered}"
     "{ a annotation |       | annotation outputs: (i)mage, (v)ideo, (r)endered }"
-    "{ l run_length | 100   | how long to run for (in frames) }";
+    "{ l run_length | -1    | how many frames to request (default is unlimited) }";
   
   cv::CommandLineParser cmd(argc, argv, keys);
   if (cmd.get<bool>("help")){
@@ -74,6 +76,9 @@ int main(int argc, char* argv[]) {
     return EXIT_SUCCESS;
   }
   string outpath = cmd.get<string>("d");
+  if (!system(("mkdir -p " + outpath).c_str())) {
+    std::cout << "Failed to create " + outpath;
+  }
   string video_in = cmd.get<string>("v");
   string images_in = cmd.get<string>("i");
   bool copy_input = cmd.get<bool>("c");
@@ -81,6 +86,9 @@ int main(int argc, char* argv[]) {
   int run_length = cmd.get<int>("l");
   
   Driver driver;
+  if (!images_in.empty() && !video_in.empty()) {
+    std::cout << "Please choose either video or image inputs, not both.\n";
+  }
   if (!images_in.empty()) {
     driver.SetInput(new FileInput(images_in));
   } else if (!video_in.empty()) {

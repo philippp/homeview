@@ -12,6 +12,20 @@
 
 using std::string;
 
+#include <iostream>
+#include <string>
+#include <cstdio>
+
+//http://stackoverflow.com/questions/2342162/stdstring-formatting-like-sprintf
+template<typename ... Args>
+string StringFormat( const std::string& format, Args ... args )
+{
+  size_t size = std::snprintf( nullptr, 0, format.c_str(), args ... ) + 1; // Extra space for '\0'
+  std::unique_ptr<char[]> buf( new char[ size ] ); 
+  std::snprintf( buf.get(), size, format.c_str(), args ... );
+  return string( buf.get(), buf.get() + size - 1 ); // We don't want the '\0' inside
+}
+
 VideoOutput::VideoOutput(const string& directory,
 			 const string& file_prefix,
 			 int fps) {
@@ -47,7 +61,7 @@ void ImageOutput::WriteFrame(const cv::Mat& frame_matrix) {
 
 void ImageOutput::WriteFrame(const cv::Mat& frame_matrix,
 			     string* filename) {
-  *filename = directory_ + "/" + file_prefix_+ std::to_string(idx_) + ".jpeg";
+  *filename = directory_ + "/" + file_prefix_+ StringFormat("%07d",idx_) + ".jpeg";
   cv::imwrite(*filename, frame_matrix);
   idx_ += 1;
 }
@@ -59,7 +73,7 @@ SequenceOutput::SequenceOutput(const std::string& destination_path) {
 
 void SequenceOutput::WriteSequence(const features::TransitionSequence& sequence) {
   std::ofstream outstream = std::ofstream(
-     destination_path_ + "/transition_sequence_" + std::to_string(sequence_id_) +
+     destination_path_ + "/transition_sequence_" + StringFormat("%07d", sequence_id_) +
      ".rio", std::ofstream::out);
   outstream << sequence.SerializeAsString();
 };
